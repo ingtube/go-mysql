@@ -231,9 +231,10 @@ func (p *BinlogParser) parseEvent(h *EventHeader, data []byte, rawData []byte) (
 			}
 			data = data[0 : len(data)-BinlogChecksumLength]
 		}
-
 		if h.EventType == ROTATE_EVENT {
 			e = &RotateEvent{}
+		} else if h.EventType == QUERY_EVENT { // 解析transaction begin事件
+			e = &QueryEvent{}
 		} else if !p.rawMode {
 			switch h.EventType {
 			case QUERY_EVENT:

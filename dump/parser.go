@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/pingcap/errors"
+
 	"github.com/siddontang/go-mysql/mysql"
 )
 
@@ -52,7 +53,6 @@ func Parse(r io.Reader, h ParseHandler, parseBinlogPos bool) error {
 		} else if mysql.ErrorEqual(err, io.EOF) {
 			break
 		}
-
 		// Ignore '\n' on Linux or '\r\n' on Windows
 		line = strings.TrimRightFunc(line, func(c rune) bool {
 			return c == '\r' || c == '\n'

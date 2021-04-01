@@ -5,49 +5,30 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/siddontang/go-mysql/canal"
 	"github.com/siddontang/go-mysql/mysql"
+	"github.com/siddontang/go-mysql/replication"
+
+	"github.com/siddontang/go-log/log"
 )
 
-var host = flag.String("host", "127.0.0.1", "MySQL host")
-var port = flag.Int("port", 3306, "MySQL port")
-var user = flag.String("user", "root", "MySQL user, must have replication privilege")
-var password = flag.String("password", "", "MySQL password")
-
-var flavor = flag.String("flavor", "mysql", "Flavor: mysql or mariadb")
-
-var serverID = flag.Int("server-id", 101, "Unique Server ID")
-var mysqldump = flag.String("mysqldump", "mysqldump", "mysqldump execution path")
-
-var dbs = flag.String("dbs", "test", "dump databases, seperated by comma")
-var tables = flag.String("tables", "", "dump tables, seperated by comma, will overwrite dbs")
-var tableDB = flag.String("table_db", "test", "database for dump tables")
-var ignoreTables = flag.String("ignore_tables", "", "ignore tables, must be database.table format, separated by comma")
-
-var startName = flag.String("bin_name", "", "start sync from binlog name")
-var startPos = flag.Uint("bin_pos", 0, "start sync from binlog position of")
-
-var heartbeatPeriod = flag.Duration("heartbeat", 60*time.Second, "master heartbeat period")
-var readTimeout = flag.Duration("read_timeout", 90*time.Second, "connection read timeout")
-
 func main() {
+	log.SetLevel(log.LevelError)
 	flag.Parse()
 
 	cfg := canal.NewDefaultConfig()
-	cfg.Addr = fmt.Sprintf("%s:%d", *host, *port)
-	cfg.User = *user
-	cfg.Password = *password
-	cfg.Flavor = *flavor
+	cfg.Addr = "xxx"
+	cfg.User = "xxx"
+	cfg.Password = "xxx"
 	cfg.UseDecimal = true
 
-	cfg.ReadTimeout = *readTimeout
-	cfg.HeartbeatPeriod = *heartbeatPeriod
-	cfg.ServerID = uint32(*serverID)
-	cfg.Dump.ExecutionPath = *mysqldump
+	cfg.ReadTimeout = 90 * time.Second
+	cfg.HeartbeatPeriod = 60 * time.Second
+	cfg.ServerID = 1
+	cfg.Dump.ExecutionPath = ""
 	cfg.Dump.DiscardErr = false
 
 	c, err := canal.NewCanal(cfg)
@@ -56,30 +37,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	if len(*ignoreTables) > 0 {
-		subs := strings.Split(*ignoreTables, ",")
-		for _, sub := range subs {
-			if seps := strings.Split(sub, "."); len(seps) == 2 {
-				c.AddDumpIgnoreTables(seps[0], seps[1])
-			}
-		}
-	}
+	//if len(*ignoreTables) > 0 {
+	//	subs := strings.Split(*ignoreTables, ",")
+	//	for _, sub := range subs {
+	//		if seps := strings.Split(sub, "."); len(seps) == 2 {
+	//			c.AddDumpIgnoreTables(seps[0], seps[1])
+	//		}
+	//	}
+	//}
 
-	if len(*tables) > 0 && len(*tableDB) > 0 {
-		subs := strings.Split(*tables, ",")
-		c.AddDumpTables(*tableDB, subs...)
-	} else if len(*dbs) > 0 {
-		subs := strings.Split(*dbs, ",")
-		c.AddDumpDatabases(subs...)
-	}
+	//if len(*tables) > 0 && len(*tableDB) > 0 {
+	//	subs := strings.Split(*tables, ",")
+	//	c.AddDumpTables(*tableDB, subs...)
+	//} else if len(*dbs) > 0 {
+	//	subs := strings.Split(*dbs, ",")
+	//	c.AddDumpDatabases(subs...)
+	//}
 
 	c.SetEventHandler(&handler{})
 
 	startPos := mysql.Position{
-		Name: *startName,
-		Pos:  uint32(*startPos),
+		Name: "mysql-bin.000681",
+		Pos:  218856,
 	}
-
 	go func() {
 		err = c.RunFrom(startPos)
 		if err != nil {
@@ -105,9 +85,52 @@ type handler struct {
 	canal.DummyEventHandler
 }
 
-func (h *handler) OnRow(e *canal.RowsEvent) error {
-	fmt.Printf("%v\n", e)
+// 打印position
+func (h *handler) OnXID(p mysql.Position) error {
+	return nil
+}
+func (h *handler) OnGTID(p mysql.GTIDSet) error {
+	return nil
+}
 
+var a int
+
+func (h *handler) OnTransBegin(queryEvent *replication.QueryEvent) error {
+	//panic(1)
+	log.Error(queryEvent.SlaveProxyID)
+	time.Sleep(time.Second)
+	a++
+	if a%2 == 0 {
+		log.Error("error")
+		//return errors.New("123")
+	}
+	return nil
+}
+// 解析 发送至mq
+func (h *handler) OnRow(e *canal.RowsEvent) error {
+	//log.Error(e.Header.Timestamp)
+	//return nil
+	log.Errorf("数据类型:%s,table:%s,time:%d", e.Action, e.Table, e.Header.Timestamp)
+	//for i := range e.Table.Columns {
+	//if e.Action == "update" {
+	//	if e.Rows[0][i] != e.Rows[1][i] {
+	//		log.Println(e.Table.Columns[i].Name, ":", e.Rows[0][i], " ")
+	//	}
+	//}
+	//fmt.Print(e.Table.Columns[i].Name, ":", e.Rows[0][i], " ")
+	//if len(e.Rows) > 1 {
+	//	fmt.Print("after:", e.Rows[1][i], " ")
+	//}
+	//}
+	//fmt.Println()
+
+	return nil
+}
+func (h *handler) OnRotate(*replication.RotateEvent) error          { return nil }
+func (h *handler) OnTableChanged(schema string, table string) error { return nil }
+
+// TODO: 可记录至mysql
+func (h *handler) OnPosSynced(p mysql.Position, s mysql.GTIDSet, b bool) error {
 	return nil
 }
 

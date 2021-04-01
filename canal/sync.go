@@ -2,6 +2,7 @@ package canal
 
 import (
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/pingcap/parser/ast"
 	uuid "github.com/satori/go.uuid"
 	"github.com/siddontang/go-log/log"
+
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
@@ -140,33 +142,39 @@ func (c *Canal) runSyncBinlog() error {
 				return errors.Trace(err)
 			}
 		case *replication.QueryEvent:
-			stmts, _, err := c.parser.Parse(string(e.Query), "", "")
-			if err != nil {
-				log.Errorf("parse query(%s) err %v, will skip this event", e.Query, err)
-				continue
-			}
-			for _, stmt := range stmts {
-				nodes := parseStmt(stmt)
-				for _, node := range nodes {
-					if node.db == "" {
-						node.db = string(e.Schema)
-					}
-					if err = c.updateTable(node.db, node.table); err != nil {
-						return errors.Trace(err)
-					}
-				}
-				if len(nodes) > 0 {
-					savePos = true
-					force = true
-					// Now we only handle Table Changed DDL, maybe we will support more later.
-					if err = c.eventHandler.OnDDL(pos, e); err != nil {
-						return errors.Trace(err)
-					}
+			if strings.HasSuffix(string(e.Query), "BEGIN") {
+				err := c.eventHandler.OnTransBegin(e)
+				if err != nil {
+					return errors.Trace(err)
 				}
 			}
-			if savePos && e.GSet != nil {
-				c.master.UpdateGTIDSet(e.GSet)
-			}
+			//stmts, _, err := c.parser.Parse(string(e.Query), "", "")
+			//if err != nil {
+			//	log.Errorf("parse query(%s) err %v, will skip this event", e.Query, err)
+			//	continue
+			//}
+			//for _, stmt := range stmts {
+			//	nodes := parseStmt(stmt)
+			//	for _, node := range nodes {
+			//		if node.db == "" {
+			//			node.db = string(e.Schema)
+			//		}
+			//		if err = c.updateTable(node.db, node.table); err != nil {
+			//			return errors.Trace(err)
+			//		}
+			//	}
+			//	if len(nodes) > 0 {
+			//		savePos = true
+			//		force = true
+			//		// Now we only handle Table Changed DDL, maybe we will support more later.
+			//		if err = c.eventHandler.OnDDL(pos, e); err != nil {
+			//			return errors.Trace(err)
+			//		}
+			//	}
+			//}
+			//if savePos && e.GSet != nil {
+			//	c.master.UpdateGTIDSet(e.GSet)
+			//}
 		default:
 			continue
 		}
